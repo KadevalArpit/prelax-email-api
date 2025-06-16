@@ -1,0 +1,11 @@
+{
+  "accounts": [
+    {
+      "id": "account1",
+      "service": "gmail",
+      "email": "plxi.arpit125@gmail.com",
+      "password": "qady jtww joes dyoq",
+      "dailyLimit": 500
+    }
+  ]
+}
