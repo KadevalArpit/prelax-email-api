@@ -5,7 +5,7 @@ const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const compression = require('compression')
 const morgan = require('morgan')
-const serverless = require('serverless-http') // Add serverless-http
+const serverless = require('serverless-http')
 const { StatusCodes } = require('http-status-codes')
 const apiRoutes = require('./routes/api')
 const { errorHandler } = require('./middleware/errorHandler')
@@ -98,9 +98,10 @@ process.on('uncaughtException', (error) => {
 })
 
 // Export for serverless environment
+module.exports = app
 module.exports.handler = serverless(app)
 
-// Optional: Keep traditional server for local development
+// Local server for development
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000
   const server = app.listen(PORT, () => {
@@ -111,7 +112,6 @@ if (process.env.NODE_ENV !== 'production') {
     )
   })
 
-  // Handle server errors
   server.on('error', (error) => {
     if (error.syscall !== 'listen') {
       throw error
@@ -129,7 +129,6 @@ if (process.env.NODE_ENV !== 'production') {
     }
   })
 
-  // Handle graceful shutdown
   process.on('SIGTERM', () => {
     logger.info('SIGTERM received. Shutting down gracefully')
     server.close(() => {
