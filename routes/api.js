@@ -1,5 +1,4 @@
 const express = require('express')
-const multer = require('multer')
 const { body, param, validationResult } = require('express-validator')
 const { StatusCodes } = require('http-status-codes')
 const emailController = require('../controllers/emailController')
@@ -9,32 +8,6 @@ const logger = require('../utils/logger')
 
 const router = express.Router()
 
-// Configure multer for file uploads
-const upload = multer({
-  dest: 'uploads/',
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
-    files: 1,
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      'text/plain',
-      'text/csv',
-      'application/vnd.ms-excel',
-      'application/csv',
-    ]
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true)
-    } else {
-      cb(
-        new ApiError(
-          StatusCodes.UNSUPPORTED_MEDIA_TYPE,
-          'Only .txt and .csv files are allowed',
-        ),
-      )
-    }
-  },
-})
 const emailTemplate = {
   text: `Dear {recipientName},
 
@@ -216,134 +189,6 @@ router.post(
 
 /**
  * @swagger
- * /api/send/batch:
- *   post:
- *     summary: Send batch emails
- *     consumes:
- *       - multipart/form-data
- *     parameters:
- *       - in: formData
- *         name: file
- *         type: file
- *         description: CSV file with email data
- *         required: true
- *       - in: formData
- *         name: subject
- *         type: string
- *         description: Email subject (can use {{variable}} for templating)
- *         required: true
- *       - in: formData
- *         name: body
- *         type: string
- *         description: Email body (can use {{variable}} for templating)
- *         required: true
- *       - in: formData
- *         name: accountId
- *         type: string
- *         description: Optional specific account ID to use
- *     responses:
- *       200:
- *         description: Batch email processing started
- *       400:
- *         description: Invalid input
- *       500:
- *         description: Internal server error
- */
-router.post(
-  '/send/batch',
-  upload.single('file'),
-  [
-    body('subject')
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage('Subject is required'),
-    body('body')
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage('Email body is required'),
-    body('accountId').optional().isString().trim(),
-  ],
-  validateRequest,
-  async (req, res, next) => {
-    try {
-      if (!req.file) {
-        throw new ApiError(StatusCodes.BAD_REQUEST, 'No file uploaded')
-      }
-
-      const { subject, body, accountId } = req.body
-
-      // Process the uploaded file
-      const fileData = await fileController.processFile(req.file)
-
-      // For CSV files, we'll process each row as a separate email
-      if (fileData.type === 'text/csv') {
-        const results = []
-
-        // Process each recipient in the CSV
-        for (const recipient of fileData.recipients) {
-          try {
-            // Replace template variables in subject and body
-            let processedSubject = subject
-            let processedBody = body
-
-            Object.entries(recipient).forEach(([key, value]) => {
-              const placeholder = new RegExp(`\\{\\s*${key}\\s*\\}`, 'g')
-              processedSubject = processedSubject.replace(placeholder, value)
-              processedBody = processedBody.replace(placeholder, value)
-            })
-
-            // Send individual email
-            const result = await emailController.sendEmail(
-              recipient.email || recipient.to,
-              { subject: processedSubject, body: processedBody },
-              accountId,
-            )
-
-            results.push({
-              recipient,
-              status: 'success',
-              messageId: result.messageId,
-            })
-          } catch (error) {
-            results.push({
-              recipient,
-              status: 'error',
-              error: error.message,
-            })
-          }
-        }
-
-        return res.status(StatusCodes.OK).json({
-          status: 'success',
-          data: {
-            total: results.length,
-            success: results.filter((r) => r.status === 'success').length,
-            failed: results.filter((r) => r.status === 'error').length,
-            results,
-          },
-        })
-      }
-
-      // For text files, send as a single email
-      const result = await emailController.sendEmail(
-        req.body.to,
-        { subject: fileData.subject || subject, body: fileData.body },
-        accountId,
-      )
-
-      res.status(StatusCodes.OK).json({
-        status: 'success',
-        data: result,
-      })
-    } catch (error) {
-      next(error)
-    }
-  },
-)
-/**
- * @swagger
  * /api/send-marketing-emails:
  *   post:
  *     summary: Send marketing emails to multiple recipients
@@ -379,101 +224,81 @@ router.post(
  *         description: Internal server error
  */
 
-router.post(
-  '/send-marketing-emails',
-  upload.single('attachment'),
-  async (req, res) => {
-    try {
-      // Validate request body
-      const { recipients } = req.body
+router.post('/send-marketing-emails', async (req, res) => {
+  try {
+    // Validate request body
+    const { recipients } = req.body
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      throw new ApiError(
+        StatusCodes.BAD_REQUEST,
+        'Recipients list is required and must be a non-empty array',
+      )
+    }
+
+    // Validate recipient format
+    const validRecipients = recipients.map((r) => {
       if (
-        !recipients ||
-        !Array.isArray(recipients) ||
-        recipients.length === 0
+        !r.email ||
+        !r.name ||
+        typeof r.email !== 'string' ||
+        typeof r.name !== 'string'
       ) {
         throw new ApiError(
           StatusCodes.BAD_REQUEST,
-          'Recipients list is required and must be a non-empty array',
+          'Each recipient must have a valid email and name',
         )
       }
+      return { email: r.email.trim(), name: r.name.trim() }
+    })
 
-      // Validate recipient format
-      const validRecipients = recipients.map((r) => {
-        if (
-          !r.email ||
-          !r.name ||
-          typeof r.email !== 'string' ||
-          typeof r.name !== 'string'
-        ) {
-          throw new ApiError(
-            StatusCodes.BAD_REQUEST,
-            'Each recipient must have a valid email and name',
-          )
-        }
-        return { email: r.email.trim(), name: r.name.trim() }
-      })
-
-      // Prepare attachment (if uploaded)
-      let attachments = []
-      if (req.file) {
-        attachments = [
-          {
-            filename: req.file.originalname,
-            path: path.join(__dirname, 'uploads', req.file.filename),
-          },
-        ]
+    // Send emails to each recipient
+    const results = []
+    for (const recipient of validRecipients) {
+      const personalizedContent = {
+        ...emailTemplate,
+        subject: 'Simplify Calculate Property Valuation Charges – Smart Tool',
+        text: emailTemplate.text.replace('{recipientName}', recipient.name),
+        html: emailTemplate.text
+          .replace('{recipientName}', recipient.name)
+          .replace(/\n/g, '<br>') // Convert newlines to HTML breaks
+          .replace(/🔧/g, '<strong>🔧</strong>')
+          .replace(/💡/g, '<strong>💡</strong>')
+          .replace(/✅/g, '<strong>✅</strong>')
+          .replace(/🎥/g, '<strong>🎥</strong>')
+          .replace(/📞/g, '<strong>📞</strong>')
+          .replace(/📍/g, '<strong>📍</strong>'),
+        replyTo: 's.shailesh909982@gmail.com',
       }
 
-      // Send emails to each recipient
-      const results = []
-      for (const recipient of validRecipients) {
-        const personalizedContent = {
-          ...emailTemplate,
-          subject: 'Simplify Calculate Property Valuation Charges – Smart Tool',
-          text: emailTemplate.text.replace('{recipientName}', recipient.name),
-          html: emailTemplate.text
-            .replace('{recipientName}', recipient.name)
-            .replace(/\n/g, '<br>') // Convert newlines to HTML breaks
-            .replace(/🔧/g, '<strong>🔧</strong>')
-            .replace(/💡/g, '<strong>💡</strong>')
-            .replace(/✅/g, '<strong>✅</strong>')
-            .replace(/🎥/g, '<strong>🎥</strong>')
-            .replace(/📞/g, '<strong>📞</strong>')
-            .replace(/📍/g, '<strong>📍</strong>'),
-          replyTo: 's.shailesh909982@gmail.com',
-          attachments,
-        }
-
-        const result = await emailController.sendEmail(
-          recipient.email,
-          personalizedContent,
-        )
-        results.push({
-          email: recipient.email,
-          name: recipient.name,
-          success: result.success,
-          messageId: result.messageId,
-          sentAt: result.sentAt,
-        })
-      }
-
-      // Clean up uploaded file
-      if (req.file) {
-        await fs.unlink(path.join(__dirname, 'uploads', req.file.filename))
-      }
-
-      res.status(StatusCodes.OK).json({
-        message: 'Emails processed successfully',
-        results,
-      })
-    } catch (error) {
-      logger.error('Error in send-marketing-emails:', error)
-      res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({
-        error: error.message,
+      const result = await emailController.sendEmail(
+        recipient.email,
+        personalizedContent,
+      )
+      results.push({
+        email: recipient.email,
+        name: recipient.name,
+        success: result.success,
+        messageId: result.messageId,
+        sentAt: result.sentAt,
       })
     }
-  },
-)
+
+    // Clean up uploaded file
+    if (req.file) {
+      await fs.unlink(path.join(__dirname, 'uploads', req.file.filename))
+    }
+
+    res.status(StatusCodes.OK).json({
+      message: 'Emails processed successfully',
+      results,
+    })
+  } catch (error) {
+    logger.error('Error in send-marketing-emails:', error)
+    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({
+      error: error.message,
+    })
+  }
+})
 /**
  * @swagger
  * /api/accounts/{accountId}/status:
