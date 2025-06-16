@@ -31,15 +31,6 @@ const logger = {
   },
 }
 
-// Ensure required directories exist
-const requiredDirs = ['uploads', 'logs']
-requiredDirs.forEach((dir) => {
-  const dirPath = path.join(__dirname, dir)
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true })
-  }
-})
-
 // Security Middleware
 app.use(helmet())
 app.use(
