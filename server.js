@@ -5,6 +5,7 @@ const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const compression = require('compression')
 const morgan = require('morgan')
+const serverless = require('serverless-http') // Add serverless-http
 const { StatusCodes } = require('http-status-codes')
 const apiRoutes = require('./routes/api')
 const { errorHandler } = require('./middleware/errorHandler')
@@ -89,50 +90,50 @@ app.use(errorHandler)
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`)
-  // Consider restarting the process in production
-  // process.exit(1);
 })
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error(`Uncaught Exception: ${error.message}`, error)
-  // Consider restarting the process in production
-  // process.exit(1);
 })
 
-const PORT = process.env.PORT || 3000
-const server = app.listen(PORT, () => {
-  logger.info(
-    `Server running in ${
-      process.env.NODE_ENV || 'development'
-    } mode on port ${PORT}`,
-  )
-})
+// Export for serverless environment
+module.exports.handler = serverless(app)
 
-// Handle server errors
-server.on('error', (error) => {
-  if (error.syscall !== 'listen') {
-    throw error
-  }
-
-  switch (error.code) {
-    case 'EACCES':
-      logger.error(`Port ${PORT} requires elevated privileges`)
-      process.exit(1)
-    case 'EADDRINUSE':
-      logger.error(`Port ${PORT} is already in use`)
-      process.exit(1)
-    default:
-      throw error
-  }
-})
-
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received. Shutting down gracefully')
-  server.close(() => {
-    logger.info('Process terminated')
+// Optional: Keep traditional server for local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000
+  const server = app.listen(PORT, () => {
+    logger.info(
+      `Server running in ${
+        process.env.NODE_ENV || 'development'
+      } mode on port ${PORT}`,
+    )
   })
-})
 
-module.exports = { app, server }
+  // Handle server errors
+  server.on('error', (error) => {
+    if (error.syscall !== 'listen') {
+      throw error
+    }
+
+    switch (error.code) {
+      case 'EACCES':
+        logger.error(`Port ${PORT} requires elevated privileges`)
+        process.exit(1)
+      case 'EADDRINUSE':
+        logger.error(`Port ${PORT} is already in use`)
+        process.exit(1)
+      default:
+        throw error
+    }
+  })
+
+  // Handle graceful shutdown
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM received. Shutting down gracefully')
+    server.close(() => {
+      logger.info('Process terminated')
+    })
+  })
+}
