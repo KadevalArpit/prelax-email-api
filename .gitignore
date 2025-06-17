@@ -59,8 +59,7 @@ typings/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
-.env
+
 
 # next.js build output
 .next
@@ -114,5 +113,3 @@ typings/
 *.cert
 *.cer
 
-# Environment files (except example)
-!.env.example

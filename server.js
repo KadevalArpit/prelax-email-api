@@ -15,27 +15,19 @@ const app = express()
 
 // Configure Winston logger
 const logger = {
-  info: (message) => {
-    console.log(`[${new Date().toISOString()}] [INFO]: ${message}`)
-  },
-  error: (message) => {
-    console.error(`[${new Date().toISOString()}] [ERROR]: ${message}`)
-  },
-  warn: (message) => {
-    console.warn(`[${new Date().toISOString()}] [WARN]: ${message}`)
-  },
-  debug: (message) => {
-    console.debug(`[${new Date().toISOString()}] [DEBUG]: ${message}`)
-  },
+  info: (message) =>
+    console.log(`[${new Date().toISOString()}] [INFO]: ${message}`),
+  error: (message) =>
+    console.error(`[${new Date().toISOString()}] [ERROR]: ${message}`),
+  warn: (message) =>
+    console.warn(`[${new Date().toISOString()}] [WARN]: ${message}`),
 }
 
 // Security Middleware
 app.use(helmet())
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS
-      ? process.env.ALLOWED_ORIGINS.split(',')
-      : '*',
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
@@ -44,11 +36,9 @@ app.use(
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 100,
   message: 'Too many requests from this IP, please try again later.',
 })
-
-// Apply rate limiting to all API routes
 app.use('/api/', limiter)
 
 // Request parsing
@@ -67,9 +57,10 @@ app.use(
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res
-    .status(StatusCodes.OK)
-    .json({ status: 'ok', timestamp: new Date().toISOString() })
+  res.status(StatusCodes.OK).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  })
 })
 
 // API Routes
@@ -94,10 +85,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  logger.error(`Uncaught Exception: ${error.message}`, error)
+  logger.error(`Uncaught Exception: ${error.message}`)
 })
 
-// Export for serverless environment
 module.exports = app
 module.exports.handler = serverless(app)
 
@@ -113,10 +103,7 @@ if (process.env.NODE_ENV !== 'production') {
   })
 
   server.on('error', (error) => {
-    if (error.syscall !== 'listen') {
-      throw error
-    }
-
+    if (error.syscall !== 'listen') throw error
     switch (error.code) {
       case 'EACCES':
         logger.error(`Port ${PORT} requires elevated privileges`)

@@ -2,7 +2,6 @@ const express = require('express')
 const { body, param, validationResult } = require('express-validator')
 const { StatusCodes } = require('http-status-codes')
 const emailController = require('../controllers/emailController')
-const fileController = require('../controllers/fileController')
 const { ApiError } = require('../middleware/errorHandler')
 const logger = require('../utils/logger')
 
@@ -41,29 +40,19 @@ Chief Technical Officer`,
   subject: 'Introducing Our Property Valuation Tool - Save Time & Effort',
 }
 
-// Middleware to validate request
 const validateRequest = (req, res, next) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
-    return res.status(StatusCodes.BAD_REQUEST).json({
-      status: 'error',
-      message: 'Validation failed',
-      errors: errors.array(),
-    })
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      'Validation failed',
+      true,
+      errors.array(),
+    )
   }
   next()
 }
 
-/**
- * @swagger
- * /api/health:
- *   get:
- *     summary: Health check endpoint
- *     description: Check if the API is running
- *     responses:
- *       200:
- *         description: API is healthy
- */
 router.get('/health', (req, res) => {
   res.status(StatusCodes.OK).json({
     status: 'success',
@@ -73,78 +62,22 @@ router.get('/health', (req, res) => {
   })
 })
 
-/**
- * @swagger
- * /api/accounts:
- *   get:
- *     summary: Get all email accounts
- *     description: Retrieve a list of all configured email accounts with their status
- *     responses:
- *       200:
- *         description: List of email accounts
- */
 router.get('/accounts', async (req, res, next) => {
   try {
     const accounts = emailController.getAccounts()
     res.status(StatusCodes.OK).json({
       status: 'success',
-      data: {
-        accounts,
-        total: accounts.length,
-      },
+      data: { accounts, total: accounts.length },
     })
   } catch (error) {
     next(error)
   }
 })
 
-/**
- * @swagger
- * /api/send:
- *   post:
- *     summary: Send an email
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - to
- *               - subject
- *               - body
- *             properties:
- *               to:
- *                 type: string
- *                 description: Recipient email address(es), comma-separated for multiple
- *               subject:
- *                 type: string
- *                 description: Email subject
- *               body:
- *                 type: string
- *                 description: Email body content
- *               accountId:
- *                 type: string
- *                 description: Optional specific account ID to use
- *               replyTo:
- *                 type: string
- *                 description: Reply-to email address
- *     responses:
- *       200:
- *         description: Email sent successfully
- *       400:
- *         description: Invalid input
- *       500:
- *         description: Internal server error
- */
 router.post(
   '/send',
   [
-    body('to')
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage('Recipient email is required'),
+    body('to').isEmail().withMessage('Valid recipient email is required'),
     body('subject')
       .isString()
       .trim()
@@ -165,12 +98,7 @@ router.post(
   async (req, res, next) => {
     try {
       const { to, subject, body, accountId, replyTo } = req.body
-
-      const emailContent = { subject, body }
-      if (replyTo) {
-        emailContent.replyTo = replyTo
-      }
-
+      const emailContent = { subject, body, replyTo }
       const result = await emailController.sendEmail(
         to,
         emailContent,
@@ -187,136 +115,68 @@ router.post(
   },
 )
 
-/**
- * @swagger
- * /api/send-marketing-emails:
- *   post:
- *     summary: Send marketing emails to multiple recipients
- *     description: Send marketing emails to multiple recipients with optional attachment
- *     consumes:
- *       - multipart/form-data
- *     parameters:
- *       - in: formData
- *         name: file
- *         type: file
- *         description: Attachment file (optional)
- *         required: false
- *       - in: formData
- *         name: recipients
- *         type: array
- *         description: List of recipients with email and name
- *         required: true
- *         items:
- *           type: object
- *           properties:
- *             email:
- *               type: string
- *               description: Recipient email address
- *             name:
- *               type: string
- *               description: Recipient name
- *     responses:
- *       200:
- *         description: Marketing emails sent successfully
- *       400:
- *         description: Invalid input
- *       500:
- *         description: Internal server error
- */
+router.post(
+  '/send-marketing-emails',
+  [
+    body('recipients')
+      .isArray({ min: 1 })
+      .withMessage('Recipients must be a non-empty array'),
+    body('recipients.*.email')
+      .isEmail()
+      .withMessage('Valid email required for each recipient'),
+    body('recipients.*.name')
+      .isString()
+      .trim()
+      .notEmpty()
+      .withMessage('Name required for each recipient'),
+  ],
+  validateRequest,
+  async (req, res, next) => {
+    try {
+      const { recipients } = req.body
+      const results = []
 
-router.post('/send-marketing-emails', async (req, res) => {
-  try {
-    // Validate request body
-    const { recipients } = req.body
-    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
-      throw new ApiError(
-        StatusCodes.BAD_REQUEST,
-        'Recipients list is required and must be a non-empty array',
-      )
-    }
+      for (const recipient of recipients) {
+        const personalizedContent = {
+          ...emailTemplate,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text.replace('{recipientName}', recipient.name),
+          html: emailTemplate.text
+            .replace('{recipientName}', recipient.name)
+            .replace(/\n/g, '<br>')
+            .replace(/🔧/g, '<strong>🔧</strong>')
+            .replace(/💡/g, '<strong>💡</strong>')
+            .replace(/✅/g, '<strong>✅</strong>')
+            .replace(/🎥/g, '<strong>🎥</strong>')
+            .replace(/📞/g, '<strong>📞</strong>')
+            .replace(/📍/g, '<strong>📍</strong>'),
+          replyTo: 's.shailesh909982@gmail.com',
+        }
 
-    // Validate recipient format
-    const validRecipients = recipients.map((r) => {
-      if (
-        !r.email ||
-        !r.name ||
-        typeof r.email !== 'string' ||
-        typeof r.name !== 'string'
-      ) {
-        throw new ApiError(
-          StatusCodes.BAD_REQUEST,
-          'Each recipient must have a valid email and name',
+        const result = await emailController.sendEmail(
+          recipient.email,
+          personalizedContent,
         )
-      }
-      return { email: r.email.trim(), name: r.name.trim() }
-    })
-
-    // Send emails to each recipient
-    const results = []
-    for (const recipient of validRecipients) {
-      const personalizedContent = {
-        ...emailTemplate,
-        subject: 'Simplify Calculate Property Valuation Charges – Smart Tool',
-        text: emailTemplate.text.replace('{recipientName}', recipient.name),
-        html: emailTemplate.text
-          .replace('{recipientName}', recipient.name)
-          .replace(/\n/g, '<br>') // Convert newlines to HTML breaks
-          .replace(/🔧/g, '<strong>🔧</strong>')
-          .replace(/💡/g, '<strong>💡</strong>')
-          .replace(/✅/g, '<strong>✅</strong>')
-          .replace(/🎥/g, '<strong>🎥</strong>')
-          .replace(/📞/g, '<strong>📞</strong>')
-          .replace(/📍/g, '<strong>📍</strong>'),
-        replyTo: 's.shailesh909982@gmail.com',
+        results.push({
+          email: recipient.email,
+          name: recipient.name,
+          success: result.success,
+          messageId: result.messageId,
+          sentAt: result.sentAt,
+        })
       }
 
-      const result = await emailController.sendEmail(
-        recipient.email,
-        personalizedContent,
-      )
-      results.push({
-        email: recipient.email,
-        name: recipient.name,
-        success: result.success,
-        messageId: result.messageId,
-        sentAt: result.sentAt,
+      res.status(StatusCodes.OK).json({
+        status: 'success',
+        message: 'Emails processed successfully',
+        results,
       })
+    } catch (error) {
+      next(error)
     }
+  },
+)
 
-    // Clean up uploaded file
-    if (req.file) {
-      await fs.unlink(path.join(__dirname, 'uploads', req.file.filename))
-    }
-
-    res.status(StatusCodes.OK).json({
-      message: 'Emails processed successfully',
-      results,
-    })
-  } catch (error) {
-    logger.error('Error in send-marketing-emails:', error)
-    res.status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR).json({
-      error: error.message,
-    })
-  }
-})
-/**
- * @swagger
- * /api/accounts/{accountId}/status:
- *   get:
- *     summary: Get account status and usage
- *     parameters:
- *       - in: path
- *         name: accountId
- *         required: true
- *         schema:
- *           type: string
- *         description: ID of the email account
- *     responses:
- *       200:
- *         description: Account status retrieved successfully
- *       404:
- *         description: Account not found
- */
 router.get(
   '/accounts/:accountId/status',
   [
@@ -350,42 +210,14 @@ router.get(
   },
 )
 
-// 404 handler for API routes
-router.use((req, res, next) => {
-  next(new ApiError(StatusCodes.NOT_FOUND, 'API endpoint not found'))
-})
-
-// Error handling middleware for API routes
+// Error handling middleware
 router.use((err, req, res, next) => {
   logger.error(`API Error: ${err.message}`, {
     url: req.originalUrl,
     method: req.method,
     body: req.body,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   })
 
-  // Handle Joi validation errors
-  if (err.isJoi) {
-    return res.status(StatusCodes.BAD_REQUEST).json({
-      status: 'error',
-      message: 'Validation error',
-      errors: err.details.map((detail) => ({
-        message: detail.message,
-        path: detail.path,
-        type: detail.type,
-      })),
-    })
-  }
-
-  // Handle multer errors
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(StatusCodes.PAYLOAD_TOO_LARGE).json({
-      status: 'error',
-      message: 'File size is too large. Maximum allowed size is 5MB',
-    })
-  }
-
-  // Handle other errors
   const statusCode = err.statusCode || StatusCodes.INTERNAL_SERVER_ERROR
   const message =
     err.isOperational !== false ? err.message : 'An unexpected error occurred'
@@ -393,7 +225,10 @@ router.use((err, req, res, next) => {
   res.status(statusCode).json({
     status: 'error',
     message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    ...(process.env.NODE_ENV === 'development' && {
+      stack: err.stack,
+      details: err.details,
+    }),
   })
 })
 
