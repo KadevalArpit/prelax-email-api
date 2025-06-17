@@ -37,7 +37,7 @@ Looking forward to connecting with you.
 Warm regards,
 Shailesh Sakariya
 Chief Technical Officer`,
-  subject: 'Introducing Our Property Valuation Tool - Save Time & Effort',
+  subject: 'Simplify Calculate Property Valuation Charges – Smart Tool',
 }
 
 const validateRequest = (req, res, next) => {
@@ -133,29 +133,34 @@ router.post(
   validateRequest,
   async (req, res, next) => {
     try {
-      const { recipients } = req.body
+      const { recipients, accountId, body, subject } = req.body
       const results = []
 
       for (const recipient of recipients) {
         const personalizedContent = {
           ...emailTemplate,
-          subject: emailTemplate.subject,
-          text: emailTemplate.text.replace('{recipientName}', recipient.name),
-          html: emailTemplate.text
-            .replace('{recipientName}', recipient.name)
-            .replace(/\n/g, '<br>')
-            .replace(/🔧/g, '<strong>🔧</strong>')
-            .replace(/💡/g, '<strong>💡</strong>')
-            .replace(/✅/g, '<strong>✅</strong>')
-            .replace(/🎥/g, '<strong>🎥</strong>')
-            .replace(/📞/g, '<strong>📞</strong>')
-            .replace(/📍/g, '<strong>📍</strong>'),
+          subject: subject || emailTemplate.subject,
+          text: body
+            ? body.replace('{recipientName}', recipient.name)
+            : emailTemplate.text.replace('{recipientName}', recipient.name),
+          html: body
+            ? body.replace('{recipientName}', recipient.name)
+            : emailTemplate.text
+                .replace('{recipientName}', recipient.name)
+                .replace(/\n/g, '<br>')
+                .replace(/🔧/g, '<strong>🔧</strong>')
+                .replace(/💡/g, '<strong>💡</strong>')
+                .replace(/✅/g, '<strong>✅</strong>')
+                .replace(/🎥/g, '<strong>🎥</strong>')
+                .replace(/📞/g, '<strong>📞</strong>')
+                .replace(/📍/g, '<strong>📍</strong>'),
           replyTo: 's.shailesh909982@gmail.com',
         }
 
         const result = await emailController.sendEmail(
           recipient.email,
           personalizedContent,
+          accountId,
         )
         results.push({
           email: recipient.email,
