@@ -27,7 +27,7 @@ const logger = {
 app.use(helmet())
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    origin: '*',
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
